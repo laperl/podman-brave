@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Llama directamente al enlace de MI_brave en tu entorno local,
+# ignorando dónde apunta Stow por debajo.
+exec "$HOME/.local/bin/MI_brave" -c brave-cript-jaume -p "$HOME/Documents/SECURE_vc/brave_profiles/brave-cript-jaume" -n normal --class="cript-jaume" "$@"

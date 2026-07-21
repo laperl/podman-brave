@@ -1,0 +1,2 @@
+#!/bin/bash
+exec "$HOME/.local/bin/MI_brave" -c brave-cript-logan-nyk -p "$HOME/Documents/SECURE_vc/brave_profiles/brave-cript-logan-nyk" -n vpn:wg-logan-nyk -t "America/New_York" --class="cript-logan-nyk" "$@"

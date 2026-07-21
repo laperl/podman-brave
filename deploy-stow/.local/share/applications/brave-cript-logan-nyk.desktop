@@ -1,0 +1,8 @@
+[Desktop Entry]
+Version=1.0
+Name=Brave DeFi Logan Wallet NYK
+Exec=/home/jaume/.local/bin/brave-cript-logan-nyk %U
+Icon=brave-browser
+Terminal=false
+Type=Application
+Categories=Network;Crypto;

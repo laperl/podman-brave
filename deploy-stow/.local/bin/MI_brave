@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+#
+# MI_brave - Motor universal de contenedores Brave aislados (Wayland + Auto-VPN)
+#
+
+set -euo pipefail
+
+MI_IMAGE_NAME="localhost/fedora-brave:1.0"
+MI_CONTAINER_NAME="brave-aislado"
+MI_PROFILE_PATH=""
+MI_NETWORK_TYPE="normal"
+MI_USB_ENABLED=0
+MI_AUDIO_ENABLED=0
+MI_TIMEZONE=""
+MI_EXTRA_PODMAN_FLAGS=()
+MI_BRAVE_ARGS=()
+VPN_INSTANCE=""
+VPN_SERVICE=""
+VPN_CONTAINER=""
+
+# Parseo de Argumentos
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  -c | --container)
+    MI_CONTAINER_NAME="$2"
+    shift 2
+    ;;
+  -p | --profile)
+    MI_PROFILE_PATH="$2"
+    shift 2
+    ;;
+  -n | --network)
+    MI_NETWORK_TYPE="$2"
+    shift 2
+    ;;
+  -t | --tz)
+    MI_TIMEZONE="$2"
+    shift 2
+    ;;
+  --audio)
+    MI_AUDIO_ENABLED=1
+    shift
+    ;;
+  --usb)
+    MI_USB_ENABLED=1
+    shift
+    ;;
+  --)
+    shift
+    MI_BRAVE_ARGS+=("$@")
+    break
+    ;;
+  -*)
+    MI_BRAVE_ARGS+=("$1")
+    shift
+    ;;
+  *)
+    MI_BRAVE_ARGS+=("$1")
+    shift
+    ;;
+  esac
+done
+
+if [ -z "$MI_PROFILE_PATH" ]; then
+  echo "ERROR: El parámetro --profile es obligatorio." >&2
+  exit 1
+fi
+
+mkdir -p "$MI_PROFILE_PATH"
+MI_PROFILE_PATH=$(realpath "$MI_PROFILE_PATH")
+
+# --- CONFIGURACIÓN DINÁMICA DE RED Y VPN AUTO-START ---
+MI_PODMAN_NET_FLAGS=()
+MI_BRAVE_NET_FLAGS=()
+
+case "$MI_NETWORK_TYPE" in
+normal)
+  MI_PODMAN_NET_FLAGS+=(--network=slirp4netns)
+  ;;
+tor)
+  MI_PODMAN_NET_FLAGS+=(--network=slirp4netns)
+  MI_BRAVE_NET_FLAGS+=(--proxy-server="socks5://10.0.2.2:9050")
+  ;;
+vpn:*)
+  VPN_INSTANCE="${MI_NETWORK_TYPE#vpn:}"
+  VPN_SERVICE="vpngluetunpod@${VPN_INSTANCE}.service"
+  VPN_CONTAINER="systemd-vpngluetunpod_${VPN_INSTANCE}"
+
+  if ! systemctl --user is-active --quiet "$VPN_SERVICE"; then
+    echo "🛡️ Levantando túnel VPN automáticamente: $VPN_INSTANCE..."
+    systemctl --user start "$VPN_SERVICE"
+    sleep 3
+  fi
+
+  MI_PODMAN_NET_FLAGS+=(--network="container:$VPN_CONTAINER")
+  ;;
+*)
+  echo "ERROR: Red '$MI_NETWORK_TYPE' no soportada. Usa normal, tor o vpn:instancia" >&2
+  exit 1
+  ;;
+esac
+
+# --- CARACTERÍSTICAS DE HARDWARE Y ENTORNO ---
+if [ "$MI_USB_ENABLED" -eq 1 ]; then
+  MI_EXTRA_PODMAN_FLAGS+=("--device" "/dev/bus/usb")
+fi
+
+if [ "$MI_AUDIO_ENABLED" -eq 1 ]; then
+  MI_EXTRA_PODMAN_FLAGS+=("-v" "$XDG_RUNTIME_DIR/pulse:/tmp/pulse:ro" "-e" "PULSE_SERVER=unix:/tmp/pulse/native")
+fi
+
+if [ -n "$MI_TIMEZONE" ]; then
+  MI_EXTRA_PODMAN_FLAGS+=("-e" "TZ=$MI_TIMEZONE")
+fi
+
+if [[ ! -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]]; then
+  echo "ERROR: Socket Wayland no encontrado: $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" >&2
+  exit 1
+fi
+
+# Eliminar contenedor previo si se quedó atascado
+podman rm -f "$MI_CONTAINER_NAME" >/dev/null 2>&1 || true
+
+# Ejecución del Contenedor
+podman run -d --rm \
+  --name "$MI_CONTAINER_NAME" \
+  --shm-size="1g" \
+  --device /dev/dri/renderD128 \
+  --userns=keep-id \
+  --security-opt label=disable \
+  --security-opt no-new-privileges \
+  -v "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY:/tmp/$WAYLAND_DISPLAY:ro,z" \
+  -e WAYLAND_DISPLAY="$WAYLAND_DISPLAY" \
+  -e XDG_RUNTIME_DIR=/tmp \
+  -v "$MI_PROFILE_PATH:/mnt/wallet_profile:Z" \
+  "${MI_PODMAN_NET_FLAGS[@]}" \
+  "${MI_EXTRA_PODMAN_FLAGS[@]}" \
+  "$MI_IMAGE_NAME" \
+  --ozone-platform=wayland \
+  --disable-features=Vulkan \
+  --user-data-dir=/mnt/wallet_profile \
+  "${MI_BRAVE_NET_FLAGS[@]}" \
+  "${MI_BRAVE_ARGS[@]}" >"$MI_PROFILE_PATH/MI_container.id" 2>&1
