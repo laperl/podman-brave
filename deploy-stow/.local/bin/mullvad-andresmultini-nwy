@@ -8,4 +8,4 @@ exec "$HOME/.local/bin/MI_browser" -c mullvad-andresmultini-nwy \
   -p "$HOME/Documents/SECURE_vc/browser_profiles/mullvad/mullvad-andresmultini-nwy" \
   -n vpn:wg-andresmultini-norway \
   -t "Europe/Oslo" \
-  --class="andresmultini-nwy" "$@"
+  --name="andresmultini-nwy" "$@"
