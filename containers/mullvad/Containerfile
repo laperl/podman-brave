@@ -2,16 +2,16 @@
 FROM registry.fedoraproject.org/fedora:latest
 
 LABEL maintainer="Jaume"
-LABEL description="Imagen base de Fedora con Brave para aislamiento rootless en Wayland"
+LABEL description="Imagen base de Fedora con Mullvad Browser para aislamiento rootless en Wayland"
 
 # Instalar herramientas base y el repositorio de Brave
 RUN dnf install -y dnf-plugins-core && \
-    dnf config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
+    dnf config-manager addrepo --from-repofile=https://repository.mullvad.net/rpm/stable/mullvad.repo
 
-# Actualizar e instalar dependencias (Brave, drivers gráficos, audio, fuentes)
+# Actualizar e instalar dependencias (Mullvad, drivers gráficos, audio, fuentes)
 RUN dnf upgrade -y && \
     dnf install -y \
-        brave-browser \
+        mullvad-browser \
         mesa-dri-drivers libglvnd-glx libglvnd-egl vulkan-loader \
         pulseaudio-libs alsa-lib \
         google-noto-sans-fonts google-noto-color-emoji-fonts \
@@ -19,10 +19,10 @@ RUN dnf upgrade -y && \
     && dnf clean all
 
 # Crear usuario sin privilegios
-RUN useradd -m -u 1000 braveuser
-USER braveuser
-WORKDIR /home/braveuser
+RUN useradd -m -u 1000 browser
+USER browser
+WORKDIR /home/browser
 
 ENV DBUS_SESSION_BUS_ADDRESS="autolaunch:"
 
-ENTRYPOINT ["/usr/bin/brave-browser"]
+ENTRYPOINT ["/usr/bin/mullvad-browser"]

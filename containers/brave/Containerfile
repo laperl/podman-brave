@@ -1,0 +1,28 @@
+# Utilizar Fedora Latest como base
+FROM registry.fedoraproject.org/fedora:latest
+
+LABEL maintainer="Jaume"
+LABEL description="Imagen base de Fedora con Brave para aislamiento rootless en Wayland"
+
+# Instalar herramientas base y el repositorio de Brave
+RUN dnf install -y dnf-plugins-core && \
+    dnf config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo
+
+# Actualizar e instalar dependencias (Brave, drivers gráficos, audio, fuentes)
+RUN dnf upgrade -y && \
+    dnf install -y \
+        brave-browser \
+        mesa-dri-drivers libglvnd-glx libglvnd-egl vulkan-loader \
+        pulseaudio-libs alsa-lib \
+        google-noto-sans-fonts google-noto-color-emoji-fonts \
+        dbus dbus-x11 libcanberra-gtk3 pciutils \
+    && dnf clean all
+
+# Crear usuario sin privilegios
+RUN useradd -m -u 1000 browser
+USER browser
+WORKDIR /home/browser
+
+ENV DBUS_SESSION_BUS_ADDRESS="autolaunch:"
+
+ENTRYPOINT ["/usr/bin/brave-browser"]
