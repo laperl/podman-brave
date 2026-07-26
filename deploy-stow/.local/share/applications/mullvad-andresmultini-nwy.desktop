@@ -1,0 +1,8 @@
+[Desktop Entry]
+Version=1.0
+Name=Mullvad Andres Multini NWY
+Exec=/home/jaume/.local/bin/mullvad-andresmultini-nwy %U
+Icon=mullvad-browser
+Terminal=false
+Type=Application
+Categories=Network;VPN;RedesSociales;

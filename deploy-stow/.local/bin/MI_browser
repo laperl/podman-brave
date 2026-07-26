@@ -1,0 +1,349 @@
+#!/usr/bin/env bash
+#
+# MI_browser
+#
+# Lanzador universal de navegadores OCI aislados mediante Podman.
+#
+# Características:
+#   - Wayland nativo.
+#   - Perfil persistente.
+#   - Red normal, Tor o Gluetun.
+#   - Audio opcional.
+#   - USB opcional.
+#   - Imagen OCI configurable.
+#
+# Compatible con ShellCheck.
+#
+
+set -Eeuo pipefail
+
+##########################################################################
+# Constantes
+##########################################################################
+
+readonly DEFAULT_IMAGE="localhost/brave:pro"
+readonly DEFAULT_CONTAINER="browser"
+readonly DEFAULT_NETWORK="normal"
+
+##########################################################################
+# Variables
+##########################################################################
+
+MI_IMAGE_NAME="$DEFAULT_IMAGE"
+MI_CONTAINER_NAME="$DEFAULT_CONTAINER"
+
+MI_PROFILE_PATH=""
+MI_NETWORK_TYPE="$DEFAULT_NETWORK"
+
+MI_ENABLE_AUDIO=0
+MI_ENABLE_USB=0
+
+MI_TIMEZONE=""
+
+VPN_INSTANCE=""
+VPN_SERVICE=""
+VPN_CONTAINER=""
+
+MI_PODMAN_NET_FLAGS=()
+MI_EXTRA_PODMAN_FLAGS=()
+MI_BROWSER_FLAGS=()
+
+##########################################################################
+# Ayuda
+##########################################################################
+
+usage() {
+  cat <<EOF
+Uso:
+    MI_browser --profile PERFIL [opciones] [-- argumentos]
+
+Opciones:
+  -p, --profile DIR
+        Directorio del perfil (obligatorio).
+  -c, --container NAME
+        Nombre del contenedor.
+  -i, --image IMAGE
+        Imagen OCI.
+        (por defecto: ${DEFAULT_IMAGE})
+  -n, --network MODE
+        Tipo de red:
+            normal
+            tor
+            vpn:INSTANCIA
+  -t, --tz ZONA
+        Zona horaria.
+      --audio
+        Habilita sonido.
+      --usb
+        Permite acceso USB.
+  -h, --help
+        Muestra esta ayuda.
+        
+Todo lo que aparezca tras "--" se pasa directamente al navegador.
+
+Ejemplo:
+    MI_browser \\
+        --profile ~/perfiles/banco \\
+        --network vpn:trabajo \\
+        --audio \\
+        -- https://example.com
+EOF
+}
+
+##########################################################################
+# Limpieza
+##########################################################################
+
+cleanup() {
+  podman rm -f "$MI_CONTAINER_NAME" >/dev/null 2>&1 || true
+}
+#trap cleanup EXIT
+
+##########################################################################
+# Dependencias
+##########################################################################
+
+check_dependencies() {
+  local cmd
+  for cmd in podman realpath systemctl; do
+    command -v "$cmd" >/dev/null || {
+      echo "ERROR: '$cmd' no está instalado." >&2
+      exit 1
+    }
+  done
+}
+
+##########################################################################
+# Parseo de argumentos
+##########################################################################
+
+parse_args() {
+  while (($#)); do
+    case "$1" in
+    -p | --profile)
+      MI_PROFILE_PATH="$2"
+      shift 2
+      ;;
+    -c | --container)
+      MI_CONTAINER_NAME="$2"
+      shift 2
+      ;;
+    -i | --image)
+      MI_IMAGE_NAME="$2"
+      shift 2
+      ;;
+    -n | --network)
+      MI_NETWORK_TYPE="$2"
+      shift 2
+      ;;
+    -t | --tz)
+      MI_TIMEZONE="$2"
+      shift 2
+      ;;
+    --audio)
+      MI_ENABLE_AUDIO=1
+      shift
+      ;;
+    --usb)
+      MI_ENABLE_USB=1
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      MI_BROWSER_FLAGS+=("$@")
+      break
+      ;;
+    *)
+      MI_BROWSER_FLAGS+=("$1")
+      shift
+      ;;
+    esac
+  done
+}
+
+##########################################################################
+# Validaciones
+##########################################################################
+
+validate() {
+  [[ -n "$MI_PROFILE_PATH" ]] || {
+    echo "ERROR: --profile es obligatorio." >&2
+    exit 1
+  }
+  mkdir -p "$MI_PROFILE_PATH"
+  MI_PROFILE_PATH=$(realpath "$MI_PROFILE_PATH")
+  if ! podman image exists "$MI_IMAGE_NAME"; then
+    echo "ERROR: La imagen '$MI_IMAGE_NAME' no existe." >&2
+    exit 1
+  fi
+  [[ -n "${WAYLAND_DISPLAY:-}" ]] || {
+    echo "ERROR: WAYLAND_DISPLAY no está definido." >&2
+    exit 1
+  }
+  [[ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]] || {
+    echo "ERROR: Socket Wayland no encontrado." >&2
+    exit 1
+  }
+}
+
+##########################################################################
+# Configuración de red
+##########################################################################
+
+setup_network() {
+  case "$MI_NETWORK_TYPE" in
+  normal)
+    MI_PODMAN_NET_FLAGS+=(--network=slirp4netns)
+    ;;
+
+  tor)
+    MI_PODMAN_NET_FLAGS+=(--network=slirp4netns)
+    MI_BROWSER_FLAGS+=(
+      --proxy-server=socks5://10.0.2.2:9050
+    )
+    ;;
+  vpn:*)
+    VPN_INSTANCE="${MI_NETWORK_TYPE#vpn:}"
+    [[ -n "$VPN_INSTANCE" ]] || {
+      echo "ERROR: Instancia VPN vacía." >&2
+      exit 1
+    }
+    VPN_SERVICE="vpngluetunpod@${VPN_INSTANCE}.service"
+    VPN_CONTAINER="systemd-vpngluetunpod_${VPN_INSTANCE}"
+    if ! systemctl --user is-active --quiet "$VPN_SERVICE"; then
+      echo "Iniciando VPN '$VPN_INSTANCE'..."
+      systemctl --user start "$VPN_SERVICE"
+      local i
+      for ((i = 0; i < 20; i++)); do
+        if systemctl --user is-active --quiet "$VPN_SERVICE"; then
+          break
+        fi
+        sleep 0.5
+      done
+      systemctl --user is-active --quiet "$VPN_SERVICE" || {
+        echo "ERROR: No pudo iniciarse la VPN." >&2
+        exit 1
+      }
+    fi
+    MI_PODMAN_NET_FLAGS+=(
+      --network="container:${VPN_CONTAINER}"
+    )
+    ;;
+  *)
+    echo "ERROR: Red '$MI_NETWORK_TYPE' no soportada." >&2
+    exit 1
+    ;;
+  esac
+}
+
+##########################################################################
+# Hardware opcional
+##########################################################################
+
+setup_optional_features() {
+  if ((MI_ENABLE_USB)); then
+    MI_EXTRA_PODMAN_FLAGS+=(
+      --device
+      /dev/bus/usb
+    )
+  fi
+
+  if ((MI_ENABLE_AUDIO)); then
+    if [[ -S "$XDG_RUNTIME_DIR/pulse/native" ]]; then
+      MI_EXTRA_PODMAN_FLAGS+=(
+        -v
+        "$XDG_RUNTIME_DIR/pulse/native:/tmp/pulse/native:ro"
+        -e
+        PULSE_SERVER=unix:/tmp/pulse/native
+      )
+    else
+      echo "Aviso: no se encontró socket PulseAudio/PipeWire."
+    fi
+  fi
+
+  if [[ -n "$MI_TIMEZONE" ]]; then
+    MI_EXTRA_PODMAN_FLAGS+=(
+      -e
+      "TZ=$MI_TIMEZONE"
+    )
+  fi
+}
+
+##########################################################################
+# Ejecución del contenedor
+##########################################################################
+
+run_container() {
+  # Elimina cualquier contenedor previo con el mismo nombre.
+  # Si no existe, ignoramos el error.
+  podman rm -f "$MI_CONTAINER_NAME" >/dev/null 2>&1 || true
+
+  echo "========================================"
+  echo "Contenedor : $MI_CONTAINER_NAME"
+  echo "Imagen     : $MI_IMAGE_NAME"
+  echo "Perfil     : $MI_PROFILE_PATH"
+  echo "Red        : $MI_NETWORK_TYPE"
+
+  if ((MI_ENABLE_AUDIO)); then
+    echo "Audio      : Sí"
+  else
+    echo "Audio      : No"
+  fi
+
+  if ((MI_ENABLE_USB)); then
+    echo "USB        : Sí"
+  else
+    echo "USB        : No"
+  fi
+
+  echo "========================================"
+
+  local cmd=(
+    podman run
+    --detach
+    --rm
+    --name "$MI_CONTAINER_NAME"
+    --shm-size=1g
+    --userns=keep-id
+    --security-opt label=disable
+    --security-opt no-new-privileges
+    --device /dev/dri/renderD128
+    -v "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY:/tmp/$WAYLAND_DISPLAY:ro,z"
+    -e WAYLAND_DISPLAY="$WAYLAND_DISPLAY"
+    -e XDG_RUNTIME_DIR=/tmp
+    -v "$MI_PROFILE_PATH:/home/browser:Z"
+    "${MI_PODMAN_NET_FLAGS[@]}"
+    "${MI_EXTRA_PODMAN_FLAGS[@]}"
+    "$MI_IMAGE_NAME"
+    --ozone-platform=wayland
+    --disable-features=Vulkan
+    "${MI_BROWSER_FLAGS[@]}"
+  )
+
+  echo
+  echo "Comando ejecutado:"
+  printf ' %q' "${cmd[@]}"
+  echo
+  echo
+
+  "${cmd[@]}" >"$MI_PROFILE_PATH/container.id"
+}
+
+##########################################################################
+# Programa principal
+##########################################################################
+
+main() {
+  check_dependencies
+  parse_args "$@"
+  validate
+  setup_network
+  setup_optional_features
+  run_container
+}
+
+main "$@"

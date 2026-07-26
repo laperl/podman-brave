@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Llama directamente al enlace de MI_brave en tu entorno local,
+# ignorando dónde apunta Stow por debajo.
+exec "$HOME/.local/bin/MI_browser" -c brave-causanon-ntl \
+  -i localhost/fedora-brave:pro --audio \
+  -p "$HOME/Documents/SECURE_vc/brave_profiles/brave-causanon-ntl" \
+  -n vpn:wg-casuanon-netherland -t "Europe/Amsterdam" --class="causanon-ntl" "$@"
