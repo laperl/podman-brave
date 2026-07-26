@@ -1,57 +1,85 @@
-# Podman Brave Sandbox 🛡️
+# Podman Browser Sandbox 🛡
 
-Un motor de contenerización avanzado para ejecutar instancias de Brave Browser totalmente aisladas utilizando Podman sin privilegios (rootless) en entornos Wayland nativos.
+Un motor de contenerización para ejecutar navegadores web completamente aislados utilizando Podman sin privilegios (*rootless*) en entornos Wayland nativos.
 
-Diseñado específicamente para aislar entornos críticos, como billeteras de criptomonedas (Web3, DeFi) o navegación a través de redes proxy (Tor/VPN), eliminando el factor humano mediante orquestación estricta.
+Diseñado para aislar entornos críticos, como billeteras de criptomonedas (Web3, DeFi), identidades independientes o navegación a través de redes Tor/VPN, reduciendo al mínimo la superficie de ataque mediante una orquestación estricta.
 
-## ✨ Características de Seguridad y Aislamiento
+## ✨ Características
 
-* **Zero-Host Network:** No utiliza `--net=host`. Cada instancia vive en su propio *namespace* de red (`slirp4netns`), en Tor, o se ancla directamente a contenedores VPN de terceros.
-* **Auto-Start VPN:** Si se especifica una red VPN, el motor levanta automáticamente el servicio *systemd* del túnel (ej. `vpngluetunpod`) antes de iniciar el navegador.
-* **Zero-Host Filesystem:** Bloquea por completo el acceso al `/home` real. El perfil del navegador se inyecta mediante volúmenes montados de forma estricta.
-* **Wayland Nativo:** Renderizado directo mediante `/dev/dri` y el socket `WAYLAND_DISPLAY`. Sin dependencias de X11 ni Xwayland.
-* **Spoofing de Entorno:** Soporte para inyectar zonas horarias (`TZ`) específicas por contenedor para evitar el *fingerprinting*.
+* **Multi-navegador:** Soporte para diferentes navegadores (Brave, Mullvad Browser y futuros navegadores basados en Chromium o Firefox).
+* **Zero-Host Network:** No utiliza `--network=host`. Cada instancia vive en su propio *namespace* de red (`slirp4netns`), utiliza Tor o se conecta directamente a un contenedor VPN existente.
+* **Auto-Start VPN:** Si se especifica una red VPN, el motor inicia automáticamente el servicio `systemd` correspondiente antes de lanzar el navegador.
+* **Zero-Host Filesystem:** El navegador no tiene acceso al `$HOME` real del usuario. Cada instancia dispone de su propio directorio persistente.
+* **Wayland Nativo:** Renderizado acelerado mediante `/dev/dri` y `WAYLAND_DISPLAY`, sin depender de X11 o Xwayland.
+* **Spoofing de Entorno:** Permite definir una zona horaria (`TZ`) distinta para cada instancia con el fin de reducir el *fingerprinting*.
+* **Motor Genérico:** Un único lanzador (`MI_browser`) sirve para cualquier navegador soportado.
 
 ## 📂 Estructura del Repositorio
 
-Este repositorio está diseñado para ser autocontenido y amigable con `GNU Stow`. Separa el código fuente y la configuración de construcción, de los archivos que realmente se instalan en el sistema de tu usuario.
-
 ```text
-podman-brave/
-├── Containerfile             <-- Receta de Podman para construir la imagen base
-├── README.md                 <-- Este documento
-├── INSTALL.md                <-- Guía paso a paso de instalación
-└── deploy-stow/              <-- ¡Directorio mágico para desplegar con Stow!
-    └── .local/
-        ├── bin/
-        │   ├── MI_brave                  <-- Motor orquestador
-        │   └── brave-cript-logan-nyk     <-- Wrapper de ejemplo (VPN)
-        └── share/
-            └── applications/
-                └── brave-cript-logan-nyk.desktop <-- Lanzador gráfico
+podman-browser/
+├── containers/
+│   ├── brave/
+│   │   └── Containerfile
+│   └── mullvad/
+│       └── Containerfile
+├── deploy-stow/
+│   └── .local/
+│       ├── bin/
+│       │   ├── MI_browser
+│       │   ├── brave-...
+│       │   └── mullvad-...
+│       └── share/
+│           └── applications/
+├── INSTALL.md
+├── README.md
+└── debug.md
 ```
+
+- **containers/** contiene las imágenes OCI para cada navegador.
+- **deploy-stow/** contiene los scripts y lanzadores que se instalan mediante GNU Stow.
+- **MI_browser** es el motor encargado de crear y ejecutar los contenedores.
 
 ## 🚀 Instalación
 
-Por favor, consulta el archivo [INSTALL.md](INSTALL.md) para ver las instrucciones de construcción de la imagen y cómo desplegar los scripts en tu sistema utilizando `stow`.
+Consulta [INSTALL.md](INSTALL.md) para construir las imágenes y desplegar los scripts mediante GNU Stow.
 
-## 🎮 Parámetros del Motor (`MI_brave`)
+## 🎮 Parámetros de `MI_browser`
 
-Al crear tus propios *wrappers* dentro de `deploy-stow/.local/bin/`, puedes utilizar los siguientes parámetros del motor principal:
+Al crear tus propios lanzadores dentro de `deploy-stow/.local/bin/`, puedes utilizar los siguientes parámetros:
 
-* `-c, --container`: Nombre del contenedor Podman (ej. `brave-aislado`).
-* `-p, --profile`: Ruta absoluta donde se guardará la persistencia del navegador.
-* `-n, --network`: Tipo de red. Opciones: `normal`, `tor`, o `vpn:<instancia>`.
-* `-t, --tz`: Configura la zona horaria del contenedor (ej. `UTC`).
-* `--audio`: Habilita el sonido inyectando el socket de PulseAudio.
-* `--usb`: Mapea `/dev/bus/usb` (necesario para hardware wallets como Trezor o Ledger).
+* `-c, --container` — Nombre del contenedor Podman.
+* `-i, --image` — Imagen OCI que se utilizará.
+* `-p, --profile` — Directorio persistente asociado a la instancia.
+* `-n, --network` — Tipo de red: `normal`, `tor` o `vpn:<instancia>`.
+* `-t, --tz` — Zona horaria del contenedor.
+* `--audio` — Habilita el acceso al servidor de audio.
+* `--usb` — Permite acceso a dispositivos USB (Ledger, Trezor, etc.).
 
-*(Cualquier argumento adicional se pasará directamente al binario de Brave, como por ejemplo `--class="cript-app"` para gestionar reglas de ventanas en tu WM).*
+Cualquier argumento situado después de `--` se pasará directamente al navegador.
 
-## 🐛 Diagnóstico y Logs
+Ejemplo:
 
-El orquestador lanza los contenedores en modo *detached* (`-d`). Para depurar fallos de arranque o problemas de Wayland, revisa los logs del contenedor:
+```bash
+MI_browser \
+    -i localhost/brave:pro \
+    -c brave-wallet \
+    -p ~/browser_profiles/brave-wallet \
+    -n vpn:wg-personal \
+    -- \
+    --class=brave-wallet
+```
+
+## 🐛 Diagnóstico
+
+Para inspeccionar un contenedor en ejecución:
 
 ```bash
 podman logs -f <nombre-del-contenedor>
+```
+
+Para comprobar el estado de las instancias:
+
+```bash
+podman ps -a
 ```

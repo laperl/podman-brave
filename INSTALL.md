@@ -18,9 +18,15 @@ Antes de poder ejecutar cualquier instancia, necesitamos construir la imagen de 
 Abre tu terminal en la raíz de este repositorio y ejecuta:
 
 ```bash
-podman build -t localhost/fedora-brave:1.0 -f Containerfile .
+podman build -t localhost/fedora-brave:pro -f Containerfile .
 ```
 *(Este proceso puede tardar unos minutos dependiendo de tu conexión a internet, ya que descargará los paquetes necesarios).*
+
+Para reconstruir la imagen desde cero (sin reutilizar capas de compilaciones anteriores), añade la opción --no-cache:
+
+```bash
+podman build --no-cache -t localhost/fedora-brave:pro -f Containerfile .
+ ```
 
 ---
 
@@ -32,7 +38,7 @@ Si necesitas añadir nuevos perfiles (billeteras, identidades, etc.), debes crea
    Crea tu script en `deploy-stow/.local/bin/tu-perfil`
    ```bash
    #!/usr/bin/env bash
-   exec "MI_brave" -c mi-contenedor -p "$HOME/Ruta/Segura" -n normal "$@"
+   exec "MI_browser" -c mi-contenedor -p "$HOME/Ruta/Segura" -n normal "$@"
    ```
    *No olvides darle permisos de ejecución:* `chmod +x deploy-stow/.local/bin/tu-perfil`
 
@@ -50,7 +56,23 @@ Si necesitas añadir nuevos perfiles (billeteras, identidades, etc.), debes crea
 
 ---
 
-## 🚀 Paso 3: Desplegar con Stow
+## 🖼️ Paso 3: Configurar el Marco de la Ventana (Obligatorio)
+
+**⚠️ No olvides este paso.** Para que cada navegador tenga el marco, el título y el comportamiento adecuados en Sway, es necesario editar la configuración de los `for_window`.
+
+Abre el siguiente archivo del repositorio `dotfiles`:
+
+```text
+../src/github.com/laperl/dotfiles/sway/.config/sway/config.d/99-podman-browser.conf
+```
+
+Y añade o actualiza la regla correspondiente para la nueva instancia del navegador.
+
+> **Importante:** Si omites este paso, el navegador seguirá funcionando, pero la ventana no tendrá el aspecto y comportamiento esperados.
+
+---
+
+## 🚀 Paso 4: Desplegar con Stow
 
 Una vez que tengas la imagen construida y tus perfiles listos en la carpeta `deploy-stow`, es hora de instalarlos en tu sistema.
 
@@ -68,7 +90,7 @@ stow -t ~ deploy-stow
 
 ### ¿Qué hace este comando?
 Stow leerá el contenido de la carpeta `deploy-stow` y creará enlaces simbólicos exactos en tu `$HOME`. 
-* `deploy-stow/.local/bin/MI_brave`  ➡️  `~/.local/bin/MI_brave`
+* `deploy-stow/.local/bin/MI_browser`  ➡️  `~/.local/bin/MI_browser`
 * `deploy-stow/.local/share/applications/...` ➡️ `~/.local/share/applications/...`
 
 Ningún archivo real se mueve de tu repositorio, lo que significa que si haces un `git pull` con actualizaciones, tu sistema se actualizará automáticamente.
