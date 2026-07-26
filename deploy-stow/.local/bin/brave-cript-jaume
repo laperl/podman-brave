@@ -5,5 +5,5 @@ set -euo pipefail
 # ignorando dónde apunta Stow por debajo.
 exec "$HOME/.local/bin/MI_browser" -c brave-cript-jaume \
   -i localhost/fedora-brave:pro \
-  -p "$HOME/Documents/SECURE_vc/brave_profiles/brave-cript-jaume" \
+  -p "$HOME/Documents/SECURE_vc/browser_profiles/brave/brave-cript-jaume" \
   -n normal --class="cript-jaume" "$@"
