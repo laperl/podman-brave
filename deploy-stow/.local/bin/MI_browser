@@ -5,8 +5,9 @@
 # Lanzador universal de navegadores OCI aislados mediante Podman.
 #
 # Características:
-#   - Wayland nativo.
+#   - Wayland nativo universal (Gecko/Firefox, Chromium/Brave, Qt).
 #   - Perfil persistente.
+#   - Mapeo opcional de descargas (agnóstico al navegador).
 #   - Red normal, Tor o Gluetun.
 #   - Audio opcional.
 #   - USB opcional.
@@ -33,6 +34,7 @@ MI_IMAGE_NAME="$DEFAULT_IMAGE"
 MI_CONTAINER_NAME="$DEFAULT_CONTAINER"
 
 MI_PROFILE_PATH=""
+MI_DOWNLOADS_PATH=""
 MI_NETWORK_TYPE="$DEFAULT_NETWORK"
 
 MI_ENABLE_AUDIO=0
@@ -55,16 +57,19 @@ MI_BROWSER_FLAGS=()
 usage() {
   cat <<EOF
 Uso:
-    MI_browser --profile PERFIL [opciones] [-- argumentos]
+    MI_browser --profile PERFIL [opciones] [-- argumentos_navegador]
+
+Lanzador universal y agnóstico de navegadores sobre Wayland (Gecko, Chromium, Qt).
 
 Opciones:
   -p, --profile DIR
-        Directorio del perfil (obligatorio).
+        Directorio del perfil (obligatorio). Se montará en /home/browser.
+  -d, --downloads DIR
+        Directorio host para descargas (opcional). Se montará en /home/browser/Downloads.
   -c, --container NAME
-        Nombre del contenedor.
+        Nombre del contenedor. (por defecto: ${DEFAULT_CONTAINER})
   -i, --image IMAGE
-        Imagen OCI.
-        (por defecto: ${DEFAULT_IMAGE})
+        Imagen OCI. (por defecto: ${DEFAULT_IMAGE})
   -n, --network MODE
         Tipo de red:
             normal
@@ -73,20 +78,29 @@ Opciones:
   -t, --tz ZONA
         Zona horaria.
       --audio
-        Habilita sonido.
+        Habilita sonido (PulseAudio/PipeWire).
       --usb
-        Permite acceso USB.
+        Permite acceso a dispositivos USB.
   -h, --help
         Muestra esta ayuda.
-        
-Todo lo que aparezca tras "--" se pasa directamente al navegador.
+
+Compatibilidad e Integración:
+  El script fuerza Wayland nativo usando variables de entorno globales
+  (MOZ_ENABLE_WAYLAND, ELECTRON_OZONE_PLATFORM_HINT, QT_QPA_PLATFORM).
+  Cualquier navegador (Brave, Firefox, Mullvad, etc.) o aplicación ignorará
+  las variables que no le correspondan de forma segura y sin generar errores.
+
+Argumentos del Navegador:
+  Flags como --class=..., --name=... o URLs se pasarán directamente al navegador.
 
 Ejemplo:
     MI_browser \\
         --profile ~/perfiles/banco \\
+        --downloads ~/Descargas/banco \\
         --network vpn:trabajo \\
         --audio \\
-        -- https://example.com
+        --class="banco-app" \\
+        https://example.com
 EOF
 }
 
@@ -97,7 +111,6 @@ EOF
 cleanup() {
   podman rm -f "$MI_CONTAINER_NAME" >/dev/null 2>&1 || true
 }
-#trap cleanup EXIT
 
 ##########################################################################
 # Dependencias
@@ -122,6 +135,10 @@ parse_args() {
     case "$1" in
     -p | --profile)
       MI_PROFILE_PATH="$2"
+      shift 2
+      ;;
+    -d | --downloads)
+      MI_DOWNLOADS_PATH="$2"
       shift 2
       ;;
     -c | --container)
@@ -158,8 +175,9 @@ parse_args() {
       break
       ;;
     *)
-      MI_BROWSER_FLAGS+=("$1")
-      shift
+      echo "ERROR: opción desconocida: $1" >&2
+      echo "Si deseas pasar argumentos al navegador, utiliza '--'." >&2
+      exit 1
       ;;
     esac
   done
@@ -176,6 +194,12 @@ validate() {
   }
   mkdir -p "$MI_PROFILE_PATH"
   MI_PROFILE_PATH=$(realpath "$MI_PROFILE_PATH")
+
+  if [[ -n "$MI_DOWNLOADS_PATH" ]]; then
+    mkdir -p "$MI_DOWNLOADS_PATH"
+    MI_DOWNLOADS_PATH=$(realpath "$MI_DOWNLOADS_PATH")
+  fi
+
   if ! podman image exists "$MI_IMAGE_NAME"; then
     echo "ERROR: La imagen '$MI_IMAGE_NAME' no existe." >&2
     exit 1
@@ -241,7 +265,7 @@ setup_network() {
 }
 
 ##########################################################################
-# Hardware opcional
+# Hardware y almacenamiento opcional
 ##########################################################################
 
 setup_optional_features() {
@@ -271,6 +295,14 @@ setup_optional_features() {
       "TZ=$MI_TIMEZONE"
     )
   fi
+
+  # Montaje del directorio de descargas opcional
+  if [[ -n "$MI_DOWNLOADS_PATH" ]]; then
+    MI_EXTRA_PODMAN_FLAGS+=(
+      -v
+      "$MI_DOWNLOADS_PATH:/home/browser/Downloads:Z"
+    )
+  fi
 }
 
 ##########################################################################
@@ -279,27 +311,20 @@ setup_optional_features() {
 
 run_container() {
   # Elimina cualquier contenedor previo con el mismo nombre.
-  # Si no existe, ignoramos el error.
   podman rm -f "$MI_CONTAINER_NAME" >/dev/null 2>&1 || true
 
   echo "========================================"
   echo "Contenedor : $MI_CONTAINER_NAME"
   echo "Imagen     : $MI_IMAGE_NAME"
   echo "Perfil     : $MI_PROFILE_PATH"
+  if [[ -n "$MI_DOWNLOADS_PATH" ]]; then
+    echo "Descargas  : $MI_DOWNLOADS_PATH"
+  else
+    echo "Descargas  : No mapeado (Aislado dentro del perfil)"
+  fi
   echo "Red        : $MI_NETWORK_TYPE"
-
-  if ((MI_ENABLE_AUDIO)); then
-    echo "Audio      : Sí"
-  else
-    echo "Audio      : No"
-  fi
-
-  if ((MI_ENABLE_USB)); then
-    echo "USB        : Sí"
-  else
-    echo "USB        : No"
-  fi
-
+  echo "Audio      : $((MI_ENABLE_AUDIO ? 1 : 0))"
+  echo "USB        : $((MI_ENABLE_USB ? 1 : 0))"
   echo "========================================"
 
   local cmd=(
@@ -312,15 +337,31 @@ run_container() {
     --security-opt label=disable
     --security-opt no-new-privileges
     --device /dev/dri/renderD128
+    # ------------------------------------------------------------------
+    # ENTORNO GRÁFICO Y NATIVO WAYLAND (Propósito General)
+    # ------------------------------------------------------------------
     -v "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY:/tmp/$WAYLAND_DISPLAY:ro,z"
     -e WAYLAND_DISPLAY="$WAYLAND_DISPLAY"
     -e XDG_RUNTIME_DIR=/tmp
+    -e XDG_SESSION_TYPE=wayland
+
+    # Mozilla / Gecko (Firefox, Mullvad, LibreWolf, Tor Browser)
+    -e MOZ_ENABLE_WAYLAND=1
+
+    # Chromium / Electron (Brave, Chrome, Vivaldi, Edge)
+    -e ELECTRON_OZONE_PLATFORM_HINT=wayland
+
+    # Frameworks Qt (Falkon, qBittorrent, etc.)
+    -e QT_QPA_PLATFORM=wayland
+
+    # ------------------------------------------------------------------
+    # PERSISTENCIA DE DATOS Y CONFIGURACIONES EXTRA
+    # ------------------------------------------------------------------
     -v "$MI_PROFILE_PATH:/home/browser:Z"
     "${MI_PODMAN_NET_FLAGS[@]}"
     "${MI_EXTRA_PODMAN_FLAGS[@]}"
     "$MI_IMAGE_NAME"
-    --ozone-platform=wayland
-    --disable-features=Vulkan
+    # Argumentos pasados al navegador
     "${MI_BROWSER_FLAGS[@]}"
   )
 
