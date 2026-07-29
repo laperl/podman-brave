@@ -21,11 +21,13 @@
 
 set -euo pipefail
 
-exec "$HOME/.local/bin/MI_browser" -c brave-cript-jaume \
-  -i localhost/fedora-brave:pro \
-  -p "$HOME/Documents/SECURE_vc/browser_profiles/brave/brave-cript-jaume" \
-  -d "$HOME/Baixades/podman-browser/brave-cript-jaume" \
-  -n normal \
+exec "$HOME/.local/bin/MI_browser" -c firefox-dev-logan-nyk \
+  -i localhost/fedora-firefox:pro --audio \
+  -p "$HOME/Documents/SECURE_vc/browser_profiles/firefox/firefox-dev-logan-nyk" \
+  -d "$HOME/Baixades/podman-browser/firefox-dev-logan-nyk" \
+  -n vpn:wg-logan-nyk \
+  -t "America/New_York" \
   -- \
-  --class="cript-jaume" \
+  --name="dev-logan-nyk" \
+  about:support \
   "$@"

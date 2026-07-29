@@ -1,11 +1,32 @@
 #!/usr/bin/env bash
+# ==============================================================================
+# Lanzador de ejemplo: Firefox Developer Edition (Perfil: Logan NYK)
+# ==============================================================================
+# Este script es un "wrapper" que sirve como plantilla para configurar y lanzar
+# instancias aisladas de un navegador utilizando el motor 'MI_browser'.
+#
+# CÓMO CONFIGURAR ESTE FICHERO PARA TU PROPIO PERFIL:
+#   -c : Nombre único para el contenedor de Podman.
+#   -i : Imagen OCI a utilizar (construida previamente con Podman).
+#   -p : Ruta en el host donde se guardará el perfil del navegador (galletas, marcas, etc.).
+#   -d : Ruta en el host para la carpeta de Descargas (opcional).
+#   -n : Tipo de red. Puede ser:
+#          - "normal"  : Red aislada por defecto.
+#          - "tor"     : Enrutado a través de Tor.
+#          - "vpn:NAME": Conecta al contenedor VPN especificado (e.g., vpn:wg-logan-nyk).
+#   -t : Zona horaria del contenedor para evitar fingerprinting (e.g., "America/New_York").
+#   --audio : Habilita la redirección de sonido (PipeWire/PulseAudio).
+#   -- : Separador obligatorio. Todo lo que va después se pasa directamente al navegador.
+# ==============================================================================
+
 set -euo pipefail
 
-# Llama directamente al enlace de MI_browser en tu entorno local,
-# ignorando dónde apunta Stow por debajo.
 exec "$HOME/.local/bin/MI_browser" -c mullvad-andresmultini-nwy \
   -i localhost/fedora-mullvad:pro --audio \
   -p "$HOME/Documents/SECURE_vc/browser_profiles/mullvad/mullvad-andresmultini-nwy" \
+  -d "$HOME/Baixades/podman-browser/mullvad-andresmultini-nwy" \
   -n vpn:wg-andresmultini-norway \
   -t "Europe/Oslo" \
-  --name="andresmultini-nwy" "$@"
+  -- \
+  --name="andresmultini-nwy" \
+  "$@"
