@@ -1,107 +1,140 @@
 # Guía de Instalación y Despliegue 🚀
 
-Este repositorio utiliza **GNU Stow** para gestionar los enlaces simbólicos de los scripts y archivos `.desktop` en tu directorio de usuario (`$HOME`), manteniendo tu sistema limpio y el repositorio autocontenido.
+Este repositorio utiliza **GNU Stow** para gestionar de forma transparente los enlaces simbólicos de los scripts lanzadores y archivos de escritorio (`.desktop`) en tu usuario (`$HOME`), manteniendo el sistema limpio y modular.
+
+---
 
 ## ⚙️ Requisitos Previos
 
-Asegúrate de tener instalados los siguientes paquetes en tu sistema (ej. Fedora, Arch, Debian):
-* `podman` (configurado para uso rootless)
-* `stow` (GNU Stow)
-* Un entorno gráfico basado en **Wayland**
+Asegúrate de contar con las siguientes dependencias instaladas en tu sistema host:
+* `podman` (configurado en modo *rootless*).
+* `stow` (GNU Stow).
+* `realpath` y `systemctl` (disponibles habitualmente en sistemas systemd).
+* Un entorno gráfico basado en **Wayland** (Sway, Hyprland, Gnome Wayland, etc.).
 
 ---
 
-## 🛠️ Paso 1: Construir la Imagen Base de Podman
+## 🛠️ Paso 1: Construir las Imágenes OCI (Podman)
 
-Antes de poder ejecutar cualquier instancia, necesitamos construir la imagen de contenedor que contiene Fedora, Brave Browser y las dependencias de Wayland/Audio.
+Puedes construir la imagen correspondiente al navegador que desees utilizar. 
 
-Abre tu terminal en la raíz de este repositorio y ejecuta:
-
+### Opción A: Imagen Fedora + Brave Browser
 ```bash
-podman build -t localhost/fedora-brave:pro -f Containerfile .
+podman build -t localhost/fedora-brave:pro -f containers/brave/Containerfile .
+
 ```
-*(Este proceso puede tardar unos minutos dependiendo de tu conexión a internet, ya que descargará los paquetes necesarios).*
 
-Para reconstruir la imagen desde cero (sin reutilizar capas de compilaciones anteriores), añade la opción --no-cache:
+### Opción B: Imagen Fedora + Firefox / Firefox Developer Edition
 
 ```bash
-podman build --no-cache -t localhost/fedora-brave:pro -f Containerfile .
- ```
+podman build -t localhost/fedora-firefox:pro -f containers/firefox/Containerfile .
+
+```
+
+> **Nota:** Si deseas hacer una reconstrucción limpia ignorando la caché previa:
+> ```bash
+> podman build --no-cache -t localhost/fedora-firefox:pro -f containers/firefox/Containerfile .
+> 
+> ```
+> 
+> 
 
 ---
 
-## 🏗️ Paso 2: Crear tus Perfiles (Opcional)
+## 🏗️ Paso 2: Crear tus Perfiles y Wrappers
 
-Si necesitas añadir nuevos perfiles (billeteras, identidades, etc.), debes crear sus respectivos archivos dentro de la carpeta `deploy-stow` **antes** de desplegarlos.
+Dentro del directorio `deploy-stow/` definirás los lanzadores que consumirá tu sistema.
 
-1. **El Wrapper (Lanzador Bash):**
-   Crea tu script en `deploy-stow/.local/bin/tu-perfil`
-   ```bash
-   #!/usr/bin/env bash
-   exec "MI_browser" -c mi-contenedor -p "$HOME/Ruta/Segura" -n normal "$@"
-   ```
-   *No olvides darle permisos de ejecución:* `chmod +x deploy-stow/.local/bin/tu-perfil`
+### 1. Crear el Wrapper (Script ejecutable)
 
-2. **El Archivo Desktop (Icono del menú):**
-   Crea tu lanzador en `deploy-stow/.local/share/applications/tu-perfil.desktop`
-   ```ini
-   [Desktop Entry]
-   Version=1.0
-   Name=Brave Mi Perfil
-   Exec=tu-perfil %U
-   Icon=brave-browser
-   Terminal=false
-   Type=Application
-   ```
+Añade tu script en `deploy-stow/.local/bin/tu-lanzador`:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec "$HOME/.local/bin/MI_browser" \
+  -c firefox-dev-logan-nyk \
+  -i localhost/fedora-firefox:pro \
+  -p "$HOME/Documentos/perfiles/firefox-dev-logan-nyk" \
+  -d "$HOME/Descargas/firefox-dev-logan-nyk" \
+  -n vpn:wg-logan-nyk \
+  -t "America/New_York" \
+  --audio \
+  -- \
+  --name="dev-logan-nyk" \
+  "$@"
+
+```
+
+*Asegúrate de concederle permisos de ejecución:*
+
+```bash
+chmod +x deploy-stow/.local/bin/tu-lanzador
+
+```
+
+### 2. Crear el Lanzador de Escritorio (`.desktop`)
+
+Crea tu acceso directo en `deploy-stow/.local/share/applications/tu-lanzador.desktop`:
+
+```ini
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Firefox Dev (Logan NYK)
+Comment=Navegador aislado en contenedor Podman con VPN
+Exec=firefox-dev-logan-nyk %U
+Icon=firefox-developer-edition
+Terminal=false
+Categories=Network;WebBrowser;
+
+```
 
 ---
 
-## 🖼️ Paso 3: Configurar el Marco de la Ventana (Obligatorio)
+## 🖼️ Paso 3: Configurar el Marco de la Ventana en Sway / Tiling WM (Obligatorio)
 
-**⚠️ No olvides este paso.** Para que cada navegador tenga el marco, el título y el comportamiento adecuados en Sway, es necesario editar la configuración de los `for_window`.
+Para garantizar que el gestor de ventanas asigne reglas, títulos, flotación o bordes correctos según la instancia, mapea la clase/nombre definida mediante las flags pasadas tras `--` (por ejemplo `--class=...` o `--name=...`).
 
-Abre el siguiente archivo del repositorio `dotfiles`:
+Si utilizas **Sway**, actualiza el archivo de configuración correspondiente (ej. `~/.config/sway/config.d/99-podman-browser.conf`):
 
 ```text
-../src/github.com/laperl/dotfiles/sway/.config/sway/config.d/99-podman-browser.conf
+# Ejemplo de regla para Firefox Dev / Logan NYK
+for_window [app_id="firefox" title=".*dev-logan-nyk.*"] border pixel 2, client.focused #ffb52a
+
+# Ejemplo de regla para Brave Cripto
+for_window [class="Brave-browser" instance="brave-cript-jaume"] border pixel 2
+
 ```
-
-Y añade o actualiza la regla correspondiente para la nueva instancia del navegador.
-
-> **Importante:** Si omites este paso, el navegador seguirá funcionando, pero la ventana no tendrá el aspecto y comportamiento esperados.
 
 ---
 
 ## 🚀 Paso 4: Desplegar con Stow
 
-Una vez que tengas la imagen construida y tus perfiles listos en la carpeta `deploy-stow`, es hora de instalarlos en tu sistema.
-
-Ejecuta el siguiente comando desde la raíz del repositorio:
-
-```bash
-stow --target=$HOME deploy-stow
-```
-
-O su versión abreviada:
+Una vez preparados los scripts en `deploy-stow/`, enlázalos a tu directorio `$HOME` ejecutando desde la raíz del repositorio:
 
 ```bash
 stow -t ~ deploy-stow
+
 ```
 
-### ¿Qué hace este comando?
-Stow leerá el contenido de la carpeta `deploy-stow` y creará enlaces simbólicos exactos en tu `$HOME`. 
-* `deploy-stow/.local/bin/MI_browser`  ➡️  `~/.local/bin/MI_browser`
-* `deploy-stow/.local/share/applications/...` ➡️ `~/.local/share/applications/...`
+### Estrategia de Enlaces Generada:
 
-Ningún archivo real se mueve de tu repositorio, lo que significa que si haces un `git pull` con actualizaciones, tu sistema se actualizará automáticamente.
+* `deploy-stow/.local/bin/*` ➡️ `~/.local/bin/*`
+
+* `deploy-stow/.local/share/applications/*` ➡️ `~/.local/share/applications/*`
+
+
+Cualquier actualización realizada en el repositorio estará disponible de inmediato en tu sistema sin necesidad de copiar archivos manualmente.
 
 ---
 
-## 🧹 Desinstalación
+## 🧹 Desinstalación o Limpieza
 
-Si algún día deseas eliminar los scripts y lanzadores de tu sistema, simplemente entra en el repositorio y dile a Stow que deshaga el trabajo:
+Para desvincular los enlaces simbólicos instalados en tu `$HOME` manteniendo intactos los archivos del repositorio, ejecuta:
 
 ```bash
 stow -D -t ~ deploy-stow
+
 ```
-*(Esto eliminará los enlaces simbólicos de tu `$HOME`, pero mantendrá los archivos intactos en tu repositorio).*

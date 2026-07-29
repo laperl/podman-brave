@@ -1,18 +1,29 @@
-# Podman Browser Sandbox 🛡
+# Podman Browser Sandbox 🛡️
 
-Un motor de contenerización para ejecutar navegadores web completamente aislados utilizando Podman sin privilegios (*rootless*) en entornos Wayland nativos.
+Un motor de contenerización avanzado para ejecutar navegadores web completamente aislados utilizando **Podman sin privilegios (*rootless*)** en entornos **Wayland nativos**.
 
-Diseñado para aislar entornos críticos, como billeteras de criptomonedas (Web3, DeFi), identidades independientes o navegación a través de redes Tor/VPN, reduciendo al mínimo la superficie de ataque mediante una orquestación estricta.
+Diseñado para aislar identidades, entornos críticos como billeteras de criptomonedas (Web3, DeFi), o navegación a través de redes VPN/Tor, reduciendo al mínimo la superficie de ataque mediante una orquestación estricta del contenedor y del almacenamiento.
 
-## ✨ Características
+---
 
-* **Multi-navegador:** Soporte para diferentes navegadores (Brave, Mullvad Browser y futuros navegadores basados en Chromium o Firefox).
-* **Zero-Host Network:** No utiliza `--network=host`. Cada instancia vive en su propio *namespace* de red (`slirp4netns`), utiliza Tor o se conecta directamente a un contenedor VPN existente.
-* **Auto-Start VPN:** Si se especifica una red VPN, el motor inicia automáticamente el servicio `systemd` correspondiente antes de lanzar el navegador.
-* **Zero-Host Filesystem:** El navegador no tiene acceso al `$HOME` real del usuario. Cada instancia dispone de su propio directorio persistente.
-* **Wayland Nativo:** Renderizado acelerado mediante `/dev/dri` y `WAYLAND_DISPLAY`, sin depender de X11 o Xwayland.
-* **Spoofing de Entorno:** Permite definir una zona horaria (`TZ`) distinta para cada instancia con el fin de reducir el *fingerprinting*.
-* **Motor Genérico:** Un único lanzador (`MI_browser`) sirve para cualquier navegador soportado.
+## ✨ Características Principales
+
+* **Universal y Agnóstico (Multi-Navegador):** Un único motor (`MI_browser`) con soporte nativo e higiénico para **Gecko / Firefox** (Firefox Dev, Mullvad Browser), **Chromium** (Brave, Chrome) y aplicaciones **Qt**.
+* **Wayland Nativo Universal:** Exporta de forma transparente variables de entorno globales (`MOZ_ENABLE_WAYLAND`, `ELECTRON_OZONE_PLATFORM_HINT`, `QT_QPA_PLATFORM`) e inyecta sockets gráficos para aceleración directa por hardware (`/dev/dri/renderD128`) sin pasar por Xwayland.
+* **Aislamiento de Red Granular (Zero-Host Network):**
+  * **`normal`:** Red aislada mediante `slirp4netns`.
+  * **`tor`:** Enrutamiento obligatorio mediante SOCKS5 proxy hacia Tor.
+  * **`vpn:<instancia>`:** Integración directa con contenedores VPN (`Gluetun`). Mantiene auto-start via `systemctl --user` si la VPN no está activa.
+* **Mapeo de Almacenamiento y Descargas Flexible:**
+  * **Perfil Persistente Obligatorio:** Montado en `/home/browser`.
+  * **Mapeo de Descargas Opcional (`-d, --downloads`):** Monta un directorio del host en `/home/browser/Downloads`. Si se omite, las descargas se quedan aisladas dentro del volumen del perfil.
+* **Spoofing de Entorno:** Permite definir la zona horaria (`TZ`) por perfil para mitigar el *fingerprinting*.
+* **Soporte de Hardware Avanzado:**
+  * **Audio:** Inyección opcional de sockets de PulseAudio / PipeWire.
+  * **USB Passthrough:** Soporte para dispositivos USB (Ledger, Trezor, YubiKeys, etc.).
+* **Integración con GNU Stow:** Estructura modular preparada para desplegar ejecutable y accesos directos `.desktop` en el entorno del usuario.
+
+---
 
 ## 📂 Estructura del Repositorio
 
@@ -21,65 +32,106 @@ podman-browser/
 ├── containers/
 │   ├── brave/
 │   │   └── Containerfile
+│   ├── firefox/
+│   │   └── Containerfile
 │   └── mullvad/
 │       └── Containerfile
 ├── deploy-stow/
 │   └── .local/
 │       ├── bin/
-│       │   ├── MI_browser
-│       │   ├── brave-...
-│       │   └── mullvad-...
+│       │   ├── MI_browser                # Motor principal
+│       │   ├── brave-causanon-ntl
+│       │   ├── brave-cript-jaume
+│       │   ├── brave-cript-logan-nyk
+│       │   ├── firefox-dev-logan-nyk
+│       │   └── mullvad-andresmultini-nwy
 │       └── share/
-│           └── applications/
+│           └── applications/             # Archivos .desktop correspondientes
 ├── INSTALL.md
 ├── README.md
-└── debug.md
+└── DEBUG.md
+
 ```
 
-- **containers/** contiene las imágenes OCI para cada navegador.
-- **deploy-stow/** contiene los scripts y lanzadores que se instalan mediante GNU Stow.
-- **MI_browser** es el motor encargado de crear y ejecutar los contenedores.
+---
 
-## 🚀 Instalación
+## 🚀 Instalación y Despliegue
 
-Consulta [INSTALL.md](INSTALL.md) para construir las imágenes y desplegar los scripts mediante GNU Stow.
+Consulta la guía paso a paso en [INSTALL.md](INSTALL.md) para construir las imágenes OCI, configurar los marcos de ventana en tu Tiling Window Manager (Sway/Hyprland) y desplegar las aplicaciones mediante GNU Stow.
 
-## 🎮 Parámetros de `MI_browser`
+---
 
-Al crear tus propios lanzadores dentro de `deploy-stow/.local/bin/`, puedes utilizar los siguientes parámetros:
+## 🎮 Opciones y Uso de `MI_browser`
 
-* `-c, --container` — Nombre del contenedor Podman.
-* `-i, --image` — Imagen OCI que se utilizará.
-* `-p, --profile` — Directorio persistente asociado a la instancia.
-* `-n, --network` — Tipo de red: `normal`, `tor` o `vpn:<instancia>`.
-* `-t, --tz` — Zona horaria del contenedor.
-* `--audio` — Habilita el acceso al servidor de audio.
-* `--usb` — Permite acceso a dispositivos USB (Ledger, Trezor, etc.).
+```text
+Uso:
+    MI_browser --profile PERFIL [opciones] [-- argumentos_navegador]
 
-Cualquier argumento situado después de `--` se pasará directamente al navegador.
+```
 
-Ejemplo:
+### Tabla de Parámetros:
+
+| Opción | Descripción | Requerido / Defecto |
+| --- | --- | --- |
+| `-p, --profile DIR` | Directorio local persistente. Se montará en `/home/browser`. | **Obligatorio** |
+| `-d, --downloads DIR` | Directorio local para guardar descargas. Se montará en `/home/browser/Downloads`. | Opcional (Aislado si se omite) |
+| `-c, --container NAME` | Nombre único para el contenedor de Podman. | Por defecto: `browser` |
+| `-i, --image IMAGE` | Imagen OCI a utilizar para lanzar el navegador. | Por defecto: `localhost/brave:pro` |
+| `-n, --network MODE` | Modo de red: `normal`, `tor` o `vpn:<INSTANCIA>`. | Por defecto: `normal` |
+| `-t, --tz ZONA` | Zona horaria para el contenedor (ej. `America/New_York`). | Opcional |
+| `--audio` | Opciones de integración para audio (PipeWire/PulseAudio). | Deshabilitado por defecto |
+| `--usb` | Habilita acceso a `/dev/bus/usb` (Firmas, Llaves de seguridad). | Deshabilitado por defecto |
+| `--` | Separador. Cualquier flag posterior pasa directamente al navegador. | Opcional |
+
+---
+
+## 💡 Ejemplos de Uso
+
+### 1. Firefox Dev con VPN dedicada, Zona Horaria y Descargas
 
 ```bash
 MI_browser \
-    -i localhost/brave:pro \
-    -c brave-wallet \
-    -p ~/browser_profiles/brave-wallet \
-    -n vpn:wg-personal \
-    -- \
-    --class=brave-wallet
+  -c firefox-dev-logan-nyk \
+  -i localhost/fedora-firefox:pro \
+  -p "$HOME/Documents/SECURE_vc/browser_profiles/firefox/firefox-dev-logan-nyk" \
+  -d "$HOME/Baixades/podman-browser/firefox-dev-logan-nyk" \
+  -n vpn:wg-logan-nyk \
+  -t "America/New_York" \
+  --audio \
+  -- \
+  --name="dev-logan-nyk" \
+  about:support
+
 ```
 
-## 🐛 Diagnóstico
+### 2. Brave Aislado con Red Tor y Soporte USB (Hardware Wallets)
 
-Para inspeccionar un contenedor en ejecución:
+```bash
+MI_browser \
+  -c brave-tor-crypto \
+  -i localhost/brave:pro \
+  -p "$HOME/perfiles/brave-tor" \
+  -n tor \
+  --usb \
+  -- \
+  --class="brave-crypto"
+
+```
+
+---
+
+## 🐛 Diagnóstico y Registros
+
+Ver logs de la instancia en tiempo real:
 
 ```bash
 podman logs -f <nombre-del-contenedor>
+
 ```
 
-Para comprobar el estado de las instancias:
+Inspeccionar contenedores activos o detenidos:
 
 ```bash
 podman ps -a
+
 ```
