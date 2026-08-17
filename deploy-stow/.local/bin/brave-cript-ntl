@@ -21,12 +21,12 @@
 
 set -euo pipefail
 
-exec "$HOME/.local/bin/MI_browser" -c brave-causanon-ntl \
+exec "$HOME/.local/bin/MI_browser" -c brave-cript-general-ntl \
   -i localhost/fedora-brave:pro \
   --audio \
-  -p "$HOME/Documents/SECURE_vc/browser_profiles/brave/brave-causanon-ntl" \
-  -d "$HOME/Baixades/podman-browser/brave-causanon-ntl" \
-  -n vpn:wg-ccript-general-ntl \
+  -p "$HOME/Documents/SECURE_vc/browser_profiles/brave/brave-cript-general-ntl" \
+  -d "$HOME/Baixades/podman-browser/brave-cript-general-ntl" \
+  -n vpn:wg-cript-general-ntl \
   -t "Europe/Amsterdam" \
   -- \
   --class="cript-general-ntl" \
