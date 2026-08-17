@@ -26,8 +26,8 @@ exec "$HOME/.local/bin/MI_browser" -c brave-causanon-ntl \
   --audio \
   -p "$HOME/Documents/SECURE_vc/browser_profiles/brave/brave-causanon-ntl" \
   -d "$HOME/Baixades/podman-browser/brave-causanon-ntl" \
-  -n vpn:wg-casuanon-netherland \
+  -n vpn:wg-ccript-general-ntl \
   -t "Europe/Amsterdam" \
   -- \
-  --class="causanon-ntl" \
+  --class="cript-general-ntl" \
   "$@"

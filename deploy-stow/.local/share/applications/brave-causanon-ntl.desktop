@@ -1,8 +1,0 @@
-[Desktop Entry]
-Version=1.0
-Name=Brave Causanon Casual Anonimo
-Exec=/home/jaume/.local/bin/brave-causanon-ntl %U
-Icon=brave-browser
-Terminal=false
-Type=Application
-Categories=Network;Anonimo;
